@@ -39,12 +39,15 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): BookGptDatabase =
         Room.databaseBuilder(context, BookGptDatabase::class.java, "bookgpt.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .fallbackToDestructiveMigration()
             .build()
 
     @Provides
     fun provideBookDao(db: BookGptDatabase) = db.bookDao()
+
+    @Provides
+    fun provideFolderDao(db: BookGptDatabase) = db.folderDao()
 
     @Provides
     fun provideChunkDao(db: BookGptDatabase) = db.chunkDao()
@@ -181,6 +184,33 @@ object AppModule {
             db.execSQL("ALTER TABLE `conversations` ADD COLUMN `summary` TEXT")
             db.execSQL(
                 "ALTER TABLE `conversations` ADD COLUMN `summarizedThroughMessageId` INTEGER",
+            )
+        }
+    }
+
+    private val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `folders` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `createdAt` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_folders_name` ON `folders` (`name`)",
+            )
+            db.execSQL(
+                """
+                ALTER TABLE `books`
+                ADD COLUMN `folderId` INTEGER
+                REFERENCES `folders`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_books_folderId` ON `books` (`folderId`)",
             )
         }
     }
