@@ -31,9 +31,11 @@ The project uses Gradle 8.11.1, Android Gradle Plugin 8.7.3, Kotlin 2.1, compile
 3. Select a writable folder using the Android document-tree picker.
 4. Open **Library** and import TXT, PDF, or EPUB files.
 5. Keep network access available while the foreground indexing work completes.
-6. Open **Chat**, select a book if desired, and ask a question.
+6. Open **Chat**, select one book or **All books**, and ask a question.
 
 The chosen folder permission is persisted. BookGPT creates a `BookGPT` child directory and copies imported files into it.
+
+Chat searches only the selected book, or the complete indexed library when **All books** is selected. It does not search the web when no answer is found. Network access is still required because OpenAI provides embeddings, reranking, and answer generation.
 
 ## Common problems
 
