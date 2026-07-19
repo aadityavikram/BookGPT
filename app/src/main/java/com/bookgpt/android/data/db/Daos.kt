@@ -61,6 +61,30 @@ interface BookDao {
 
     @Query("UPDATE books SET status = 'PENDING', errorMessage = NULL, indexedAt = NULL, fileHash = ''")
     suspend fun markAllPending()
+
+    @Query("UPDATE books SET folderId = :folderId WHERE id = :bookId AND status = 'INDEXED'")
+    suspend fun moveIndexedBook(bookId: Long, folderId: Long?): Int
+}
+
+@Dao
+interface FolderDao {
+    @Query("SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC")
+    fun observeFolders(): Flow<List<FolderEntity>>
+
+    @Query("SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC")
+    suspend fun getFolders(): List<FolderEntity>
+
+    @Query("SELECT * FROM folders WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): FolderEntity?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM folders WHERE name = :name COLLATE NOCASE)")
+    suspend fun existsByName(name: String): Boolean
+
+    @Insert
+    suspend fun insert(folder: FolderEntity): Long
+
+    @Query("DELETE FROM folders WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }
 
 @Dao

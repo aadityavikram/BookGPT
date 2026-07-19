@@ -13,6 +13,8 @@ import com.bookgpt.android.data.db.BookGptDatabase
 import com.bookgpt.android.data.db.ChatDao
 import com.bookgpt.android.data.db.ChatMessageEntity
 import com.bookgpt.android.data.db.ConversationEntity
+import com.bookgpt.android.data.db.FolderDao
+import com.bookgpt.android.data.db.FolderEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,6 +33,7 @@ class BackupManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: BookGptDatabase,
     private val bookDao: BookDao,
+    private val folderDao: FolderDao,
     private val chatDao: ChatDao,
     private val json: Json,
 ) {
@@ -47,6 +50,7 @@ class BackupManager @Inject constructor(
             context.getDatabasePath("bookgpt.db").copyTo(snapshot, overwrite = true)
         }
 
+        val folders = folderDao.getFolders().map(BackupFolder::from)
         val books = bookDao.getBooks().map(BackupBook::from)
         val chats = BackupChats(
             conversations = chatDao.getConversations().map(BackupConversation::from),
@@ -56,6 +60,7 @@ class BackupManager @Inject constructor(
             createdAt = System.currentTimeMillis(),
             databaseVersion = DATABASE_VERSION,
             bookCount = books.size,
+            folderCount = folders.size,
             conversationCount = chats.conversations.size,
             includesApiKey = false,
         )
@@ -68,6 +73,7 @@ class BackupManager @Inject constructor(
                 snapshot.inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
                 zip.writeJson("manifest.json", json.encodeToString(manifest))
+                zip.writeJson("folders.json", json.encodeToString(folders))
                 zip.writeJson("books.json", json.encodeToString(books))
                 zip.writeJson("chats.json", json.encodeToString(chats))
             }
@@ -148,6 +154,8 @@ class BackupManager @Inject constructor(
                 sqlite.execSQL("DELETE FROM embeddings")
                 sqlite.execSQL("DELETE FROM chunks")
                 sqlite.execSQL("DELETE FROM books")
+                sqlite.execSQL("DELETE FROM folders")
+                sqlite.execSQL("INSERT INTO folders SELECT * FROM restored.folders")
                 sqlite.execSQL("INSERT INTO books SELECT * FROM restored.books")
                 sqlite.execSQL("INSERT INTO chunks SELECT * FROM restored.chunks")
                 sqlite.execSQL("INSERT INTO embeddings SELECT * FROM restored.embeddings")
@@ -210,6 +218,7 @@ class BackupManager @Inject constructor(
         val createdAt: Long,
         val databaseVersion: Int,
         val bookCount: Int,
+        val folderCount: Int,
         val conversationCount: Int,
         val includesApiKey: Boolean,
     )
@@ -224,6 +233,7 @@ class BackupManager @Inject constructor(
         val sourceUri: String,
         val format: String,
         val status: String,
+        val folderId: Long?,
     ) {
         companion object {
             fun from(book: BookEntity) = BackupBook(
@@ -235,6 +245,22 @@ class BackupManager @Inject constructor(
                 book.relativePath,
                 book.format,
                 book.status.name,
+                book.folderId,
+            )
+        }
+    }
+
+    @Serializable
+    private data class BackupFolder(
+        val id: Long,
+        val name: String,
+        val createdAt: Long,
+    ) {
+        companion object {
+            fun from(folder: FolderEntity) = BackupFolder(
+                folder.id,
+                folder.name,
+                folder.createdAt,
             )
         }
     }
@@ -290,10 +316,11 @@ class BackupManager @Inject constructor(
 
     companion object {
         private const val DATABASE_ENTRY = "bookgpt.db"
-        private const val DATABASE_VERSION = 4
+        private const val DATABASE_VERSION = 5
         private const val MAX_DATABASE_BYTES = 2L * 1024 * 1024 * 1024
         private val REQUIRED_TABLES = listOf(
             "books",
+            "folders",
             "chunks",
             "embeddings",
             "conversations",
