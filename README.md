@@ -1,6 +1,6 @@
 # BookGPT Android
 
-BookGPT is a native Android reading assistant that lets you import books and ask questions about their contents. It extracts and indexes text on-device, creates embeddings with OpenAI, retrieves relevant passages locally, and streams answers with chapter or page citations. If a question cannot be answered from the local library, BookGPT can optionally supplement the answer with web search results.
+BookGPT is a native Android reading assistant that lets you import books and ask questions about their contents. It extracts and indexes text on-device, creates embeddings with OpenAI, retrieves relevant passages locally, and streams library-grounded answers with chapter or page citations. It does not search the web for answers.
 
 ## Features
 
@@ -12,7 +12,8 @@ BookGPT is a native Android reading assistant that lets you import books and ask
 - Chat with one selected book or search across the whole library.
 - Stream answers and show source citations.
 - Keep multiple persistent conversations with generated titles and rolling summaries.
-- Fall back to DuckDuckGo search when local content is unavailable.
+- Keep answers restricted to the focused book, or the complete library when **All books** is selected.
+- Report when an answer cannot be found in the selected scope instead of searching the web.
 - Select OpenAI chat and embedding models.
 - Store the OpenAI API key using Android Keystore-backed encryption.
 - Export and restore database backups.
@@ -60,14 +61,14 @@ Jetpack Compose UI
         |
 Domain services and repositories
         |
-Room | WorkManager | OpenAI | Storage Access Framework | Web search
+Room | WorkManager | OpenAI | Storage Access Framework
 ```
 
 The main source areas are:
 
 - `ui/`: Compose screens, navigation, and ViewModels
 - `domain/`: document loading, chunking, retrieval, reranking, and chat orchestration
-- `data/`: Room, settings, storage, backup, OpenAI, and web implementations
+- `data/`: Room, settings, storage, backup, and OpenAI implementations
 - `worker/`: foreground background-indexing work
 - `di/`: Hilt dependency wiring
 
@@ -122,7 +123,7 @@ Changing the embedding model invalidates existing indexes; books must be reindex
 - The API key is encrypted with an Android Keystore-backed master key.
 - Questions, selected passages, and conversation context are sent to OpenAI to produce answers.
 - Book text is sent to OpenAI in batches when embeddings are created.
-- DuckDuckGo receives search queries only when web fallback is used.
+- Questions are not sent to a web search provider and web results are not used as answer sources.
 - Backups include the database and readable metadata, but exclude the API key and original book files.
 
 Review [Settings and security](docs/settings-and-security.md) before distributing or modifying the app.

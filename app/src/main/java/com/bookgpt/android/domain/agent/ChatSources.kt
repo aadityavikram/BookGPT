@@ -1,7 +1,6 @@
 package com.bookgpt.android.domain.agent
 
 import com.bookgpt.android.domain.retrieve.RetrievedChunk
-import com.bookgpt.android.data.web.WebResult
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -14,7 +13,6 @@ data class LibraryCitation(
 @Serializable
 data class ChatSources(
     val libraryChunks: Map<String, List<LibraryCitation>> = emptyMap(),
-    val webResults: List<WebResult> = emptyList(),
 ) {
     fun addLibraryChunk(chunk: RetrievedChunk): ChatSources {
         val citation = LibraryCitation(
@@ -26,7 +24,7 @@ data class ChatSources(
         return copy(libraryChunks = libraryChunks + (chunk.title to (existing + citation)))
     }
 
-    val hasSources: Boolean get() = libraryChunks.isNotEmpty() || webResults.isNotEmpty()
+    val hasSources: Boolean get() = libraryChunks.isNotEmpty()
 }
 
 fun formatSourcesText(sources: ChatSources): String {
@@ -38,10 +36,6 @@ fun formatSourcesText(sources: ChatSources): String {
             .map { citationLabel(it) }
             .toSortedSet()
         lines += "- Based on $bookTitle (library): ${labels.joinToString(", ")}"
-    }
-    if (sources.webResults.isNotEmpty()) {
-        lines += "- From web search:"
-        sources.webResults.forEach { lines += "  - ${it.title}: ${it.href}" }
     }
     return lines.joinToString("\n")
 }

@@ -19,13 +19,15 @@ The Library screen supports multi-file import, indexing progress, failure messag
 The Chat screen supports:
 
 - streaming assistant responses
-- one-book or all-library scope
+- an authoritative one-book or **All books** library scope
 - displayed chapter/page citations
 - multiple persistent conversations
 - automatic conversation titles
 - rename, switch, clear, and delete actions
 - long-chat rolling summaries
-- web fallback when local content is unavailable
+- a scoped not-found response when the selected book or library has no matching passage
+
+Chat does not search the web. A focused book is never widened to the rest of the library; **All books** is the only mode that retrieves from every indexed book.
 
 ## Settings
 

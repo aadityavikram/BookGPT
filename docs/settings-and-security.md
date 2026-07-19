@@ -27,11 +27,11 @@ Book storage is accessed through Android's Storage Access Framework. The app req
 
 - OpenAI receives book text during embedding.
 - OpenAI receives questions, retrieved passages, and conversation context during chat.
-- DuckDuckGo receives fallback search queries.
+- BookGPT does not send queries to a web search provider or use internet search results as answer sources.
 - Room stores extracted book text, embeddings, and conversations locally.
 - Backups exclude the API key and original books but contain extracted text and chats.
 
-The current direct-to-OpenAI design avoids operating a custom backend, but places key protection and API usage control on the user's device. A determined attacker with control of a device may still recover runtime secrets.
+Internet permission remains necessary for OpenAI embeddings, reranking, answer generation, summaries, and conversation titles. The current direct-to-OpenAI design avoids operating a custom backend, but places key protection and API usage control on the user's device. A determined attacker with control of a device may still recover runtime secrets.
 
 ## Development rules
 
