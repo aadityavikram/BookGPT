@@ -222,13 +222,19 @@ class BookLoader @Inject constructor() {
         var metadataIsbn: String? = null
 
         ZipFile(file).use { zip ->
-            val entries = zip.entries().toList()
-            val opfEntry = entries.firstOrNull {
-                it.name.endsWith(".opf", ignoreCase = true)
-            }
-            if (opfEntry != null) {
-                zip.getInputStream(opfEntry).bufferedReader().use { reader ->
-                    val opf = Jsoup.parse(reader.readText(), "", org.jsoup.parser.Parser.xmlParser())
+            val entriesByName = zip.entries().asSequence()
+                .filter { !it.isDirectory }
+                .associateBy { it.name.trimStart('/') }
+
+            val opfPath = findOpfPath(zip, entriesByName.keys)
+            val documentPaths = if (opfPath != null) {
+                val opfEntry = entriesByName[opfPath]
+                    ?: entriesByName.entries.firstOrNull {
+                        it.key.equals(opfPath, ignoreCase = true)
+                    }?.value
+                if (opfEntry != null) {
+                    val opfText = zip.getInputStream(opfEntry).bufferedReader().use { it.readText() }
+                    val opf = Jsoup.parse(opfText, "", org.jsoup.parser.Parser.xmlParser())
                     metadataTitle = cleanTitle(opf.select("dc|title, title").firstOrNull()?.text())
                     metadataAuthor = cleanAuthor(opf.select("dc|creator, creator").firstOrNull()?.text())
                     for (identifier in opf.select("dc|identifier, identifier")) {
@@ -238,28 +244,34 @@ class BookLoader @Inject constructor() {
                             break
                         }
                     }
+                    spineDocumentPaths(opf, opfPath, entriesByName.keys)
+                } else {
+                    emptyList()
                 }
+            } else {
+                emptyList()
+            }.ifEmpty {
+                // Fallback only when OPF/spine is missing.
+                entriesByName.keys
+                    .filter { isHtmlPath(it) && !isSkippableEpubPath(it) }
+                    .sorted()
             }
 
-            val htmlEntries = entries
-                .filter {
-                    !it.isDirectory && (
-                        it.name.endsWith(".xhtml", true) ||
-                            it.name.endsWith(".html", true) ||
-                            it.name.endsWith(".htm", true)
-                        )
-                }
-                .sortedBy { it.name }
-
-            for (entry in htmlEntries) {
+            for (path in documentPaths) {
+                val entry = entriesByName[path]
+                    ?: entriesByName.entries.firstOrNull { it.key.equals(path, ignoreCase = true) }?.value
+                    ?: continue
                 val html = zip.getInputStream(entry).bufferedReader().use { it.readText() }
                 val soup = Jsoup.parse(html)
+                if (isNavigationDocument(soup, path)) continue
                 val chapter = chapterFromHtml(soup)
                 val body = soup.body()?.text()?.trim().orEmpty().ifBlank {
                     soup.text().trim()
                 }
                 if (body.isBlank()) continue
+                if (isMostlyTableOfContents(body)) continue
                 for (segment in Chunker.splitTextIntoSegments(body)) {
+                    if (segment.text.isBlank()) continue
                     segments += TextSegment(
                         text = segment.text,
                         chapter = segment.chapter.ifBlank { chapter },
@@ -278,11 +290,171 @@ class BookLoader @Inject constructor() {
         )
     }
 
+    private fun findOpfPath(zip: ZipFile, names: Set<String>): String? {
+        val container = names.firstOrNull {
+            it.equals("META-INF/container.xml", ignoreCase = true)
+        }
+        if (container != null) {
+            val entry = zip.getEntry(container) ?: zip.entries().asSequence().firstOrNull {
+                it.name.equals(container, ignoreCase = true)
+            }
+            if (entry != null) {
+                val xml = zip.getInputStream(entry).bufferedReader().use { it.readText() }
+                val doc = Jsoup.parse(xml, "", org.jsoup.parser.Parser.xmlParser())
+                val fullPath = doc.select("rootfile").firstOrNull()?.attr("full-path")?.trim().orEmpty()
+                if (fullPath.isNotEmpty()) {
+                    return normalizeZipPath(fullPath)
+                }
+            }
+        }
+        return names.firstOrNull { it.endsWith(".opf", ignoreCase = true) }?.let(::normalizeZipPath)
+    }
+
+    private fun spineDocumentPaths(
+        opf: org.jsoup.nodes.Document,
+        opfPath: String,
+        zipNames: Set<String>,
+    ): List<String> {
+        val opfDir = opfPath.substringBeforeLast('/', missingDelimiterValue = "")
+        val manifest = mutableMapOf<String, ManifestItem>()
+        for (item in opf.select("manifest > item")) {
+            val id = item.attr("id").trim()
+            val href = item.attr("href").trim()
+            if (id.isEmpty() || href.isEmpty()) continue
+            val properties = item.attr("properties")
+            val mediaType = item.attr("media-type")
+            val resolved = resolveOpfHref(opfDir, href)
+            val match = matchZipPath(resolved, zipNames) ?: continue
+            manifest[id] = ManifestItem(
+                path = match,
+                properties = properties,
+                mediaType = mediaType,
+            )
+        }
+
+        val ordered = mutableListOf<String>()
+        val seen = mutableSetOf<String>()
+        for (itemRef in opf.select("spine > itemref")) {
+            val idRef = itemRef.attr("idref").trim()
+            val item = manifest[idRef] ?: continue
+            if (!isHtmlPath(item.path)) continue
+            if (item.isNav) continue
+            if (isSkippableEpubPath(item.path)) continue
+            if (seen.add(item.path)) {
+                ordered += item.path
+            }
+        }
+        if (ordered.isNotEmpty()) return ordered
+
+        // Spine missing/unusable: use manifest HTML in declaration order.
+        return manifest.values
+            .asSequence()
+            .filter { isHtmlPath(it.path) && !it.isNav && !isSkippableEpubPath(it.path) }
+            .map { it.path }
+            .distinct()
+            .toList()
+    }
+
+    private data class ManifestItem(
+        val path: String,
+        val properties: String,
+        val mediaType: String,
+    ) {
+        val isNav: Boolean
+            get() = properties.split(Regex("""\s+""")).any { it.equals("nav", ignoreCase = true) } ||
+                mediaType.equals("application/x-dtbncx+xml", ignoreCase = true)
+    }
+
+    private fun resolveOpfHref(opfDir: String, href: String): String {
+        val cleaned = href.substringBefore('#').substringBefore('?').trim().replace('\\', '/')
+        val decoded = try {
+            java.net.URLDecoder.decode(cleaned, Charsets.UTF_8.name())
+        } catch (_: Exception) {
+            cleaned
+        }
+        val joined = when {
+            decoded.startsWith('/') -> decoded.trimStart('/')
+            opfDir.isEmpty() -> decoded
+            else -> "$opfDir/$decoded"
+        }
+        return normalizeZipPath(joined)
+    }
+
+    private fun normalizeZipPath(path: String): String {
+        val parts = path.replace('\\', '/').split('/')
+            .filter { it.isNotEmpty() && it != "." }
+        val resolved = mutableListOf<String>()
+        for (part in parts) {
+            if (part == "..") {
+                if (resolved.isNotEmpty()) resolved.removeAt(resolved.lastIndex)
+            } else {
+                resolved += part
+            }
+        }
+        return resolved.joinToString("/")
+    }
+
+    private fun matchZipPath(path: String, zipNames: Set<String>): String? {
+        if (path in zipNames) return path
+        return zipNames.firstOrNull { it.equals(path, ignoreCase = true) }
+    }
+
+    private fun isHtmlPath(path: String): Boolean {
+        val name = path.substringAfterLast('/')
+        return name.endsWith(".xhtml", true) ||
+            name.endsWith(".html", true) ||
+            name.endsWith(".htm", true)
+    }
+
+    private fun isSkippableEpubPath(path: String): Boolean {
+        val name = path.substringAfterLast('/').substringBeforeLast('.').lowercase()
+        return name == "nav" ||
+            name == "toc" ||
+            name == "tocnav" ||
+            name == "ncx" ||
+            name == "cover" ||
+            name == "coverpage" ||
+            name == "titlepage" ||
+            name == "title-page" ||
+            name == "copyright" ||
+            name == "colophon" ||
+            name.startsWith("toc_") ||
+            name.startsWith("nav_")
+    }
+
+    private fun isNavigationDocument(soup: org.jsoup.nodes.Document, path: String): Boolean {
+        if (isSkippableEpubPath(path)) return true
+        val hasTocNav = soup.select("nav").any { nav ->
+            val epubType = nav.attr("epub:type").ifBlank { nav.attr("type") }
+            epubType.split(Regex("""\s+""")).any { it.equals("toc", ignoreCase = true) } ||
+                nav.id().equals("toc", ignoreCase = true) ||
+                nav.classNames().any { it.equals("toc", ignoreCase = true) }
+        }
+        if (!hasTocNav) return false
+        val bodyText = soup.body()?.text()?.trim().orEmpty()
+        // Standalone TOC/nav documents are skippable; mixed chapter pages are not.
+        return bodyText.length < 2_000 || isMostlyTableOfContents(bodyText)
+    }
+
+    private fun isMostlyTableOfContents(body: String): Boolean {
+        val lines = body.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        if (lines.size < 5) return false
+        val headingLike = lines.count { TOC_CHAPTER_LINE.matches(it) || it.length < 60 }
+        return headingLike.toFloat() / lines.size >= 0.8f && body.length < 4_000
+    }
+
     private fun chapterFromHtml(soup: org.jsoup.nodes.Document): String {
         for (tag in listOf("h1", "h2", "h3", "title")) {
             val heading = soup.selectFirst(tag)?.text()?.trim().orEmpty()
             if (heading.isNotEmpty()) return heading
         }
         return ""
+    }
+
+    companion object {
+        private val TOC_CHAPTER_LINE = Regex(
+            """^(?:chapter|ch\.?|part|book|section)\s+[\divxlc]+\b.*$""",
+            RegexOption.IGNORE_CASE,
+        )
     }
 }
