@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -23,6 +24,7 @@ import androidx.navigation.compose.rememberNavController
 import com.bookgpt.android.ui.chat.ChatScreen
 import com.bookgpt.android.ui.library.LibraryScreen
 import com.bookgpt.android.ui.navigation.Routes
+import com.bookgpt.android.ui.reader.ReaderScreen
 import com.bookgpt.android.ui.settings.SettingsScreen
 
 @Composable
@@ -48,6 +50,16 @@ fun BookGptNavHost() {
                         },
                         icon = { Icon(Icons.AutoMirrored.Filled.LibraryBooks, contentDescription = null) },
                         label = { Text("Library") },
+                    )
+                    NavigationBarItem(
+                        selected = current == Routes.READER,
+                        onClick = {
+                            navController.navigate(Routes.READER) {
+                                launchSingleTop = true
+                            }
+                        },
+                        icon = { Icon(Icons.Default.MenuBook, contentDescription = null) },
+                        label = { Text("Reader") },
                     )
                     NavigationBarItem(
                         selected = current == Routes.CHAT,
@@ -79,6 +91,7 @@ fun BookGptNavHost() {
             modifier = Modifier.padding(padding),
         ) {
             composable(Routes.LIBRARY) { LibraryScreen() }
+            composable(Routes.READER) { ReaderScreen() }
             composable(Routes.CHAT) {
                 ChatScreen(
                     onOpenLibrary = {

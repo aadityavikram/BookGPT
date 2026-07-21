@@ -1,6 +1,5 @@
 package com.bookgpt.android.domain.agent
 
-import com.bookgpt.android.data.web.WebResult
 import com.bookgpt.android.domain.retrieve.RetrievedChunk
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -41,18 +40,5 @@ class ChatSourcesTest {
     @Test
     fun formatSourcesText_emptyWhenNoSources() {
         assertFalse(formatSourcesText(ChatSources()).contains("Sources"))
-    }
-
-    @Test
-    fun formatSourcesText_includesWebResultLink() {
-        val sources = ChatSources(
-            webResults = listOf(
-                WebResult("Book review", "https://example.com/review", "A useful review"),
-            ),
-        )
-
-        val formatted = formatSourcesText(sources)
-        assertTrue(formatted.contains("From web search"))
-        assertTrue(formatted.contains("https://example.com/review"))
     }
 }

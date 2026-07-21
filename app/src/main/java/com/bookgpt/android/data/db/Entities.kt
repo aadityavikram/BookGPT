@@ -12,7 +12,28 @@ enum class BookStatus {
     FAILED,
 }
 
-@Entity(tableName = "books")
+@Entity(
+    tableName = "folders",
+    indices = [Index(value = ["name"], unique = true)],
+)
+data class FolderEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(
+    tableName = "books",
+    foreignKeys = [
+        ForeignKey(
+            entity = FolderEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["folderId"],
+            onDelete = ForeignKey.SET_NULL,
+        ),
+    ],
+    indices = [Index("folderId")],
+)
 data class BookEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
@@ -26,6 +47,7 @@ data class BookEntity(
     val status: BookStatus,
     val errorMessage: String? = null,
     val indexedAt: Long? = null,
+    val folderId: Long? = null,
 )
 
 @Entity(

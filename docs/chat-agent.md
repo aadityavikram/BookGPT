@@ -1,20 +1,25 @@
 # Chat agent
 
-`BookAgent` coordinates retrieval, optional web fallback, conversation context, streaming answer generation, and persistence.
+`BookAgent` coordinates scoped library retrieval, conversation context, streaming answer generation, and persistence.
 
 ## Book scope
 
-Chat can be focused on one selected book or operate across the library. When no explicit focus is selected, the agent can identify a referenced book before retrieval.
+Chat can be focused on one selected book or operate across the library. The focus selector is authoritative:
+
+- selecting a book restricts retrieval and citations to that book
+- selecting **All books** searches all indexed books in the library
+
+The text of a question does not change the selected focus. If no relevant passage is found, focused-book retrieval does not fall back to other books.
 
 ## Answer flow
 
 1. Save the user message.
-2. resolve the relevant book scope.
+2. Read the scope selected in the focus control.
 3. retrieve and rerank local passages.
-4. use DuckDuckGo fallback when the requested content is not locally available.
-5. assemble instructions, sources, recent messages, and any rolling summary.
-6. stream the OpenAI response to the UI.
-7. save the completed assistant message and source information.
+4. If no passage is found, return a scoped not-found response without requesting an answer.
+5. Assemble strict grounding instructions, library sources, recent messages, and any rolling summary.
+6. Stream the OpenAI response to the UI.
+7. Save the completed assistant message and library source information.
 
 ## Conversation context
 
@@ -22,9 +27,11 @@ Conversations and messages persist in Room. By default, the most recent 12 messa
 
 The app supports multiple conversations, automatic title generation, conversation selection, rename, deletion, and clearing.
 
-## Web fallback
+## Library-only grounding
 
-`WebSearch` retrieves DuckDuckGo HTML results when local books do not contain the requested material. Search snippets are external, untrusted context and may be incomplete or inaccurate. Web fallback requires network access and sends the search query to DuckDuckGo.
+Answers use only retrieved passages from the selected library scope. BookGPT does not call a web search service, use web results, or fall back from a focused book to the rest of the library. The system prompt also instructs the answer model not to use general knowledge or unsupported conversation claims as evidence.
+
+This is library-only grounding, not fully offline operation. OpenAI network access is still used for embeddings, reranking, answer generation, conversation summaries, and generated conversation titles.
 
 ## Streaming and errors
 
@@ -36,4 +43,3 @@ The app supports multiple conversations, automatic title generation, conversatio
 - `domain/agent/ConversationContextAssembler.kt`
 - `domain/agent/ChatSources.kt`
 - `ui/chat/ChatViewModel.kt`
-- `data/web/WebSearch.kt`

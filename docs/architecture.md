@@ -6,7 +6,7 @@ BookGPT is a single-module, layered MVVM-style Android application.
 
 - **UI (`ui/`)**: Jetpack Compose screens, navigation, dialogs, UI state, and Hilt ViewModels.
 - **Domain (`domain/`)**: format loading, chunking, vector retrieval, reranking, context assembly, and agent orchestration.
-- **Data (`data/`)**: Room persistence, OpenAI networking, document storage, settings, backup, and web search.
+- **Data (`data/`)**: Room persistence, OpenAI networking, document storage, settings, and backup.
 - **Workers (`worker/`)**: durable, foreground book indexing through WorkManager.
 - **Dependency injection (`di/`)**: Hilt providers for database, repositories, clients, and services.
 
@@ -35,15 +35,17 @@ Android document picker
 
 ```text
 User question
-  -> resolve focused book or detect a referenced book
+  -> read the selected focus (one book or All books)
   -> embed the query
-  -> page through local vectors and score cosine similarity
+  -> search vectors only within the selected library scope
   -> rerank candidate passages with OpenAI
-  -> optionally search the web
-  -> combine sources, recent messages, and rolling summary
-  -> stream an OpenAI answer
+  -> return a local not-found response when retrieval is empty
+  -> otherwise combine library sources, recent messages, and rolling summary
+  -> stream a library-grounded OpenAI answer
   -> persist answer and source metadata
 ```
+
+Chat never searches the web. Selecting a specific book never falls back to other books; selecting **All books** searches the full indexed library.
 
 ## State and concurrency
 

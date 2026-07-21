@@ -6,18 +6,20 @@ import androidx.room.TypeConverters
 
 @Database(
     entities = [
+        FolderEntity::class,
         BookEntity::class,
         ChunkEntity::class,
         EmbeddingEntity::class,
         ConversationEntity::class,
         ChatMessageEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
 abstract class BookGptDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
+    abstract fun folderDao(): FolderDao
     abstract fun chunkDao(): ChunkDao
     abstract fun embeddingDao(): EmbeddingDao
     abstract fun chatDao(): ChatDao

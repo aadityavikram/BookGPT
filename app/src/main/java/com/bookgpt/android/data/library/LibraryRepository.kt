@@ -18,6 +18,8 @@ import com.bookgpt.android.data.db.ChunkDao
 import com.bookgpt.android.data.db.ChunkEntity
 import com.bookgpt.android.data.db.EmbeddingDao
 import com.bookgpt.android.data.db.EmbeddingEntity
+import com.bookgpt.android.data.db.FolderDao
+import com.bookgpt.android.data.db.FolderEntity
 import com.bookgpt.android.data.openai.OpenAiClient
 import com.bookgpt.android.data.openai.FailureCategory
 import com.bookgpt.android.data.openai.OperationFailure
@@ -52,6 +54,7 @@ class LibraryRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: BookGptDatabase,
     private val bookDao: BookDao,
+    private val folderDao: FolderDao,
     private val chunkDao: ChunkDao,
     private val embeddingDao: EmbeddingDao,
     private val bookLoader: BookLoader,
@@ -61,6 +64,27 @@ class LibraryRepository @Inject constructor(
     @Named("booksDir") private val booksDir: File,
 ) {
     fun observeBooks(): Flow<List<BookEntity>> = bookDao.observeBooks()
+    fun observeFolders(): Flow<List<FolderEntity>> = folderDao.observeFolders()
+
+    suspend fun createFolder(name: String): Long = withContext(Dispatchers.IO) {
+        val normalized = name.trim()
+        require(normalized.isNotEmpty()) { "Folder name cannot be empty" }
+        require(normalized.length <= 80) { "Folder name must be 80 characters or fewer" }
+        require(!folderDao.existsByName(normalized)) { "A folder with this name already exists" }
+        folderDao.insert(FolderEntity(name = normalized))
+    }
+
+    suspend fun deleteFolder(folderId: Long) = withContext(Dispatchers.IO) {
+        folderDao.deleteById(folderId)
+    }
+
+    suspend fun moveIndexedBook(bookId: Long, folderId: Long?) = withContext(Dispatchers.IO) {
+        if (folderId != null) {
+            require(folderDao.getById(folderId) != null) { "Folder not found" }
+        }
+        val updated = bookDao.moveIndexedBook(bookId, folderId)
+        require(updated == 1) { "Only indexed books can be moved" }
+    }
 
     suspend fun importUris(uris: List<Uri>): List<Long> = withContext(Dispatchers.IO) {
         val ids = mutableListOf<Long>()
@@ -84,6 +108,7 @@ class LibraryRepository @Inject constructor(
                 fileHash = "",
                 format = ext,
                 status = BookStatus.PENDING,
+                folderId = existing?.folderId,
             )
             val id = bookDao.upsert(book)
             ids += id

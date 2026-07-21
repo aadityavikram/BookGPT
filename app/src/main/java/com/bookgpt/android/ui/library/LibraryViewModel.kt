@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bookgpt.android.data.library.LibraryRepository
 import com.bookgpt.android.data.db.BookEntity
+import com.bookgpt.android.data.db.FolderEntity
 import com.bookgpt.android.data.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,8 @@ import javax.inject.Inject
 
 data class LibraryUiState(
     val books: List<BookEntity> = emptyList(),
+    val folders: List<FolderEntity> = emptyList(),
+    val collapsedFolderIds: Set<Long> = emptySet(),
     val hasApiKey: Boolean = false,
     val message: String? = null,
     val isImporting: Boolean = false,
@@ -32,22 +35,39 @@ class LibraryViewModel @Inject constructor(
 
     private val message = MutableStateFlow<String?>(null)
     private val importing = MutableStateFlow(false)
+    private val collapsedFolderIds = MutableStateFlow<Set<Long>>(emptySet())
+    private val libraryContent = combine(
+        libraryRepository.observeBooks(),
+        libraryRepository.observeFolders(),
+        collapsedFolderIds,
+    ) { books, folders, collapsed -> Triple(books, folders, collapsed) }
 
     val uiState: StateFlow<LibraryUiState> = combine(
-        libraryRepository.observeBooks(),
+        libraryContent,
         settingsRepository.hasApiKey,
         message,
         importing,
         settingsRepository.libraryTreeUri,
-    ) { books, hasKey, msg, isImporting, treeUri ->
+    ) { (books, folders, collapsed), hasKey, msg, isImporting, treeUri ->
         LibraryUiState(
             books = books,
+            folders = folders,
+            collapsedFolderIds = collapsed,
             hasApiKey = hasKey,
             message = msg,
             isImporting = isImporting,
             hasLibraryFolder = treeUri != null,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
+
+    fun toggleFolderCollapsed(folderId: Long) {
+        collapsedFolderIds.value =
+            if (folderId in collapsedFolderIds.value) {
+                collapsedFolderIds.value - folderId
+            } else {
+                collapsedFolderIds.value + folderId
+            }
+    }
 
     fun importBooks(uris: List<Uri>) {
         if (uris.isEmpty()) return
@@ -72,6 +92,14 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             libraryRepository.deleteBook(bookId)
             message.value = "Book deleted"
+        }
+    }
+
+    fun deleteBooks(bookIds: Set<Long>) {
+        if (bookIds.isEmpty()) return
+        viewModelScope.launch {
+            bookIds.forEach { libraryRepository.deleteBook(it) }
+            message.value = "Deleted ${bookIds.size} book(s)"
         }
     }
 
@@ -107,6 +135,47 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             libraryRepository.clearIndex()
             message.value = "Index cleared. Source books remain in the BookGPT folder."
+        }
+    }
+
+    fun createFolder(name: String) {
+        viewModelScope.launch {
+            try {
+                libraryRepository.createFolder(name)
+                message.value = "Folder created"
+            } catch (error: Exception) {
+                message.value = error.message ?: "Could not create folder"
+            }
+        }
+    }
+
+    fun deleteFolder(folderId: Long) {
+        viewModelScope.launch {
+            libraryRepository.deleteFolder(folderId)
+            message.value = "Folder deleted. Its books are now unfiled."
+        }
+    }
+
+    fun moveBook(bookId: Long, folderId: Long?) {
+        viewModelScope.launch {
+            try {
+                libraryRepository.moveIndexedBook(bookId, folderId)
+                message.value = if (folderId == null) "Book moved to Unfiled" else "Book moved"
+            } catch (error: Exception) {
+                message.value = error.message ?: "Could not move book"
+            }
+        }
+    }
+
+    fun moveBooks(bookIds: Set<Long>, folderId: Long?) {
+        if (bookIds.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                bookIds.forEach { libraryRepository.moveIndexedBook(it, folderId) }
+                message.value = "Moved ${bookIds.size} book(s)"
+            } catch (error: Exception) {
+                message.value = error.message ?: "Could not move books"
+            }
         }
     }
 
